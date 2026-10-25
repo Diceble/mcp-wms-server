@@ -2,8 +2,6 @@
 
 A small, read-only [Model Context Protocol](https://modelcontextprotocol.io) server in .NET that lets Claude answer questions about stock and orders straight from a warehouse database.
 
-> **Demo:** _link to the 2–3 minute video_
-
 You ask Claude in plain language. Claude picks the tools, combines them, and explains the answer, including the messy parts of the data. A typical answer, condensed:
 
 > **Can we ship order 1042 in full today?**

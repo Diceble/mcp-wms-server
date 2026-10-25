@@ -6,7 +6,7 @@
 
 Een kleine MCP-server in .NET waarmee Claude in gewone taal vragen over voorraad en orders beantwoordt, rechtstreeks uit een eigen database.
 
-**Klaar is:** ik kan Claude vragen stellen over voorraad en orders, en het antwoordt correct uit mijn database via een MCP-server die ik in .NET heb gebouwd, met een README en een korte demovideo.
+**Klaar is:** ik kan Claude vragen stellen over voorraad en orders, en het antwoordt correct uit mijn database via een MCP-server die ik in .NET heb gebouwd, met een README.
 
 ## Scope
 
@@ -114,7 +114,7 @@ tests/
 - [x] Week 1: datamodel, seeddata en querylaag met een paar unit tests
 - [x] Week 2: MCP-server met de 5 tools, gekoppeld aan Claude Desktop, vragen 1 en 2 werken
 - [x] Week 3: vragen 3 en 4 werken; tool-beschrijvingen tunen (hier leer je het meest over hoe modellen tools kiezen en combineren)
-- [ ] Week 4: README, demovideo van 2–3 minuten, op GitHub. Klaar.
+- [x] Week 4: README, op GitHub. Klaar. (De demovideo is geschrapt.)
 
 Past het niet in de tijd, schrap dan scope, geen kwaliteit.
 
