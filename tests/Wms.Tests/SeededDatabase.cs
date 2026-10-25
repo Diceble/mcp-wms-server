@@ -27,6 +27,8 @@ public sealed class SeededDatabase : IDisposable
 
     public DateOnly Today => DateOnly.FromDateTime(Now.Date);
 
+    public SqliteConnection Connection => _connection;
+
     public WmsDbContext CreateContext() =>
         new(new DbContextOptionsBuilder<WmsDbContext>().UseSqlite(_connection).Options);
 
