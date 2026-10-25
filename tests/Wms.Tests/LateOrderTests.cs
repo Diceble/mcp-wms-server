@@ -23,7 +23,20 @@ public class LateOrderTests(SeededDatabase database) : QueryTestBase(database)
         var late = Assert.Single(orders, o => o.OrderNumber == LateNew);
         Assert.Equal(LateOrderCategory.Late, late.Category);
         Assert.Equal(-5, late.DaysUntilPromised);
-        Assert.Equal(["Promised date passed 5 day(s) ago"], late.Reasons);
+        Assert.Equal(
+            ["Promised date passed 5 day(s) ago", "All open lines have enough stock; status is New (NW)"],
+            late.Reasons);
+    }
+
+    [Fact]
+    public async Task Late_orders_show_the_normalized_status_as_the_clue()
+    {
+        var orders = await Queries.GetLateOrdersAsync(ct: Ct);
+
+        var late = Assert.Single(orders, o => o.OrderNumber == LateLowercaseStatus);
+        Assert.Equal(
+            ["Promised date passed 2 day(s) ago", "All open lines have enough stock; status is Picking (PCK)"],
+            late.Reasons);
     }
 
     [Theory]
@@ -42,8 +55,8 @@ public class LateOrderTests(SeededDatabase database) : QueryTestBase(database)
     [InlineData(OnHoldDueTomorrow, "Order is on hold (HLD)")]
     [InlineData(BackorderDueInTwoDays, "Order is on backorder (BO)")]
     [InlineData(UnknownStatusDueTomorrow, "Unknown status code 'X9'")]
-    [InlineData(ShortDueInTwoDays, "Insufficient stock for TUB-SCH-SV17: 10 open, short 7")]
-    [InlineData(ShortOrder, "Insufficient stock for BRK-SHI-B01S: 12 open, short 2")]
+    [InlineData(ShortDueInTwoDays, "Insufficient stock for TUB-SCH-SV17: 10 open, short 7; also needed by other open orders: 1109 (10 open)")]
+    [InlineData(ShortOrder, "Insufficient stock for BRK-SHI-B01S: 12 open, short 2; also needed by other open orders: 1101 (4 open)")]
     public async Task At_risk_orders_explain_why(int orderNumber, string reason)
     {
         var orders = await Queries.GetLateOrdersAsync(ct: Ct);
@@ -60,6 +73,7 @@ public class LateOrderTests(SeededDatabase database) : QueryTestBase(database)
 
         var order = Assert.Single(orders, o => o.OrderNumber == ShortDueInThreeDays);
         Assert.Equal(3, order.DaysUntilPromised);
+        Assert.Equal(["Insufficient stock for TUB-SCH-SV17: 10 open, short 7; also needed by other open orders: 1108 (10 open)"], order.Reasons);
     }
 
     [Fact]

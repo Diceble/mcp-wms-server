@@ -32,9 +32,8 @@ public sealed class McpServerFixture : IAsyncLifetime
         builder.Services.AddSingleton<TimeProvider>(_database.Time);
         builder.Services.AddWmsInventory(o => o.UseSqlite(_database.Connection));
         builder.Services
-            .AddMcpServer()
-            .WithStreamServerTransport(clientToServer.Reader.AsStream(), serverToClient.Writer.AsStream())
-            .WithWmsTools();
+            .AddWmsMcpServer(_database.Today)
+            .WithStreamServerTransport(clientToServer.Reader.AsStream(), serverToClient.Writer.AsStream());
 
         _host = builder.Build();
         await _host.StartAsync();
@@ -91,6 +90,37 @@ public class McpServerTests(McpServerFixture server) : IClassFixture<McpServerFi
         var required = schema.GetProperty("required").EnumerateArray().Select(e => e.GetString());
         Assert.Contains(parameter, required);
         Assert.False(string.IsNullOrWhiteSpace(schema.GetProperty("properties").GetProperty(parameter).GetProperty("description").GetString()));
+    }
+
+    [Fact]
+    public void Server_instructions_explain_terms_and_today()
+    {
+        var instructions = server.Client.ServerInstructions;
+
+        Assert.NotNull(instructions);
+        Assert.Contains("Today is 2026-11-02", instructions);
+        Assert.Contains("quantityOpen <= its own quantityReserved + available", instructions);
+    }
+
+    [Fact]
+    public async Task Order_and_stock_tools_together_reveal_the_short_line_of_order_1042()
+    {
+        // The combination question 4 relies on: own reservations from get_order, the rest from get_stock_for_product.
+        var order = await CallAsync("get_order", new() { ["orderNumber"] = ShortOrder });
+        var shortLines = new List<string>();
+
+        foreach (var line in order.GetProperty("lines").EnumerateArray().Where(l => l.GetProperty("quantityOpen").GetInt32() > 0))
+        {
+            var sku = line.GetProperty("sku").GetString();
+            var stock = await CallAsync("get_stock_for_product", new() { ["sku"] = sku });
+            var usable = line.GetProperty("quantityReserved").GetInt32() + stock.GetProperty("available").GetInt32();
+            if (line.GetProperty("quantityOpen").GetInt32() > usable)
+            {
+                shortLines.Add($"{sku}:{line.GetProperty("quantityOpen").GetInt32() - usable}");
+            }
+        }
+
+        Assert.Equal([$"{BrakePadSku}:2"], shortLines);
     }
 
     [Fact]

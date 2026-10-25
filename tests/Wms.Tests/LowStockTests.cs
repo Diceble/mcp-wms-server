@@ -34,7 +34,7 @@ public class LowStockTests(SeededDatabase database) : QueryTestBase(database)
 
         var grips = Assert.Single(low, p => p.Sku == GripSku);
         Assert.Equal(18, grips.OnHand);
-        Assert.Equal(10, grips.Unshippable);
+        Assert.Equal((10, 0), (grips.InQualityControl, grips.Damaged));
         Assert.Equal(8, grips.Available);
     }
 

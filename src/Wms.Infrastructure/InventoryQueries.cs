@@ -30,17 +30,29 @@ public sealed class InventoryQueries(WmsDbContext db, TimeProvider time) : IInve
             return null;
         }
 
-        var reservedByLocation = await db.Reservations
+        var today = time.Today();
+        var reservations = await db.Reservations
             .Where(r => r.OrderLine.ProductId == product.Id)
+            .Select(r => new { r.LocationId, r.OrderLine.Order.OrderNumber, r.OrderLine.Order.PromisedDate, r.Quantity })
+            .ToListAsync(ct);
+        var reservedFor = reservations
             .GroupBy(r => r.LocationId)
-            .Select(g => new { LocationId = g.Key, Quantity = g.Sum(r => r.Quantity) })
-            .ToDictionaryAsync(x => x.LocationId, x => x.Quantity, ct);
+            .ToDictionary(
+                g => g.Key,
+                g => g.GroupBy(r => (r.OrderNumber, r.PromisedDate))
+                    .Select(o => new LocationReservation(
+                        o.Key.OrderNumber,
+                        o.Sum(r => r.Quantity),
+                        o.Key.PromisedDate,
+                        o.Key.PromisedDate.DayNumber - today.DayNumber))
+                    .OrderBy(o => o.OrderNumber)
+                    .ToList());
 
         var locations = product.StockLevels
             .OrderBy(s => s.Location.BinCode, StringComparer.Ordinal)
             .Select(s =>
             {
-                var byOrders = reservedByLocation.GetValueOrDefault(s.LocationId);
+                var byOrders = reservedFor.GetValueOrDefault(s.LocationId) ?? [];
                 return new LocationStock(
                     s.Location.BinCode,
                     s.Location.Zone,
@@ -49,7 +61,7 @@ public sealed class InventoryQueries(WmsDbContext db, TimeProvider time) : IInve
                     s.Reserved,
                     Available(s),
                     byOrders,
-                    ReservationMismatch: byOrders != s.Reserved);
+                    ReservationMismatch: byOrders.Sum(r => r.Quantity) != s.Reserved);
             })
             .ToList();
 
@@ -60,7 +72,8 @@ public sealed class InventoryQueries(WmsDbContext db, TimeProvider time) : IInve
             OnHand: product.StockLevels.Sum(s => s.Quantity),
             Reserved: product.StockLevels.Sum(s => s.Reserved),
             Available: product.StockLevels.Sum(Available),
-            Unshippable: product.StockLevels.Sum(Unshippable),
+            InQualityControl: product.StockLevels.Sum(s => InZone(s, Zone.Qc)),
+            Damaged: product.StockLevels.Sum(s => InZone(s, Zone.Dmg)),
             locations);
     }
 
@@ -76,7 +89,8 @@ public sealed class InventoryQueries(WmsDbContext db, TimeProvider time) : IInve
                 Available: p.StockLevels.Sum(Available),
                 OnHand: p.StockLevels.Sum(s => s.Quantity),
                 Reserved: p.StockLevels.Sum(s => s.Reserved),
-                Unshippable: p.StockLevels.Sum(Unshippable)))
+                InQualityControl: p.StockLevels.Sum(s => InZone(s, Zone.Qc)),
+                Damaged: p.StockLevels.Sum(s => InZone(s, Zone.Dmg))))
             .Where(p => p.Available < p.ReorderLevel)
             .OrderByDescending(p => p.Shortfall)
             .ThenBy(p => p.Sku, StringComparer.Ordinal)
@@ -102,7 +116,8 @@ public sealed class InventoryQueries(WmsDbContext db, TimeProvider time) : IInve
                 l.Reservations.Sum(r => r.Quantity)))
             .ToList();
 
-        return new OrderDetail(order.OrderNumber, order.Customer, OrderStatus.Resolve(order.StatusCode), order.PromisedDate, lines);
+        var days = order.PromisedDate.DayNumber - time.Today().DayNumber;
+        return new OrderDetail(order.OrderNumber, order.Customer, OrderStatus.Resolve(order.StatusCode), order.PromisedDate, days, lines);
     }
 
     public async Task<IReadOnlyList<LateOrder>> GetLateOrdersAsync(int atRiskWithinDays = 2, CancellationToken ct = default)
@@ -122,11 +137,13 @@ public sealed class InventoryQueries(WmsDbContext db, TimeProvider time) : IInve
             .ToList();
 
         var stock = await LoadStockAsync(openOrders.SelectMany(x => x.Order.Lines), ct);
+        var demand = await LoadOpenDemandAsync(openOrders.SelectMany(x => x.Order.Lines), ct);
         var result = new List<LateOrder>();
 
         foreach (var (order, status) in openOrders)
         {
-            // Each order is checked on its own; competing orders do not share free stock here.
+            // Each order is checked on its own; competing orders do not share free stock here,
+            // so shortage reasons name the other open orders that need the same SKU.
             var problems = new List<string>();
             if (StatusProblem(status) is { } statusProblem)
             {
@@ -135,13 +152,17 @@ public sealed class InventoryQueries(WmsDbContext db, TimeProvider time) : IInve
 
             problems.AddRange(CheckLines(order, stock)
                 .Where(l => l.Shortfall > 0)
-                .Select(l => $"Insufficient stock for {l.Sku}: {l.QuantityOpen} open, short {l.Shortfall}"));
+                .Select(l => ShortageReason(l, demand.GetValueOrDefault(l.Sku) ?? [], order.OrderNumber)));
 
             var days = order.PromisedDate.DayNumber - today.DayNumber;
             if (days < 0)
             {
+                // Without a stock or status problem, the status is the only clue to why it is late.
+                List<string> why = problems.Count > 0
+                    ? problems
+                    : [$"All open lines have enough stock; status is {status.Meaning} ({status.Code})"];
                 result.Add(ToLateOrder(order, status, LateOrderCategory.Late, days,
-                    [$"Promised date passed {-days} day(s) ago", .. problems]));
+                    [$"Promised date passed {-days} day(s) ago", .. why]));
             }
             else if (problems.Count > 0)
             {
@@ -214,9 +235,10 @@ public sealed class InventoryQueries(WmsDbContext db, TimeProvider time) : IInve
             {
                 var reservedShippable = levels.Where(s => s.Location.Zone.IsShippable()).Sum(s => s.Reserved);
                 var reservedForOthers = Math.Max(0, reservedShippable - own);
-                var unshippable = levels.Sum(Unshippable);
+                var inQc = levels.Sum(s => InZone(s, Zone.Qc));
+                var damaged = levels.Sum(s => InZone(s, Zone.Dmg));
                 reason = $"Short {shortfall}: {open} open, {own} reserved for this order, {free} free in shippable zones. " +
-                         $"Not usable: {reservedForOthers} reserved for other orders, {unshippable} in QC/DMG zones.";
+                         $"Not usable: {reservedForOthers} reserved for other orders, {inQc} in quality control, {damaged} damaged.";
             }
 
             result.Add(new ShipmentLineCheck(line.Product.Sku, line.Product.Name, open, own, free, shortfall, reason));
@@ -232,6 +254,35 @@ public sealed class InventoryQueries(WmsDbContext db, TimeProvider time) : IInve
         { Code: "BO" } => "Order is on backorder (BO)",
         _ => null,
     };
+
+    private static string ShortageReason(ShipmentLineCheck line, List<(int OrderNumber, int QuantityOpen)> demand, int orderNumber)
+    {
+        var reason = $"Insufficient stock for {line.Sku}: {line.QuantityOpen} open, short {line.Shortfall}";
+        var others = demand.Where(d => d.OrderNumber != orderNumber).ToList();
+        return others.Count == 0
+            ? reason
+            : $"{reason}; also needed by other open orders: {string.Join(", ", others.Select(d => $"{d.OrderNumber} ({d.QuantityOpen} open)"))}";
+    }
+
+    /// <summary>Open quantity per open order for each SKU, regardless of promised date.</summary>
+    private async Task<Dictionary<string, List<(int OrderNumber, int QuantityOpen)>>> LoadOpenDemandAsync(IEnumerable<OrderLine> lines, CancellationToken ct)
+    {
+        var productIds = lines.Select(l => l.ProductId).Distinct().ToList();
+        var openLines = await db.OrderLines
+            .Where(l => productIds.Contains(l.ProductId) && l.Quantity > l.QuantityShipped)
+            .Select(l => new { l.Product.Sku, l.Order.OrderNumber, l.Order.StatusCode, Open = l.Quantity - l.QuantityShipped })
+            .ToListAsync(ct);
+
+        return openLines
+            .Where(l => OrderStatus.Resolve(l.StatusCode).IsOpen)
+            .GroupBy(l => l.Sku)
+            .ToDictionary(
+                g => g.Key,
+                g => g.GroupBy(l => l.OrderNumber)
+                    .Select(o => (o.Key, o.Sum(l => l.Open)))
+                    .OrderBy(o => o.Key)
+                    .ToList());
+    }
 
     private static LateOrder ToLateOrder(Order order, OrderStatusInfo status, LateOrderCategory category, int days, List<string> reasons) =>
         new(order.OrderNumber, order.Customer, status, order.PromisedDate, category, days, reasons);
@@ -260,6 +311,6 @@ public sealed class InventoryQueries(WmsDbContext db, TimeProvider time) : IInve
     private static int Available(StockLevel stock) =>
         stock.Location.Zone.IsShippable() ? Math.Max(0, stock.Quantity - stock.Reserved) : 0;
 
-    private static int Unshippable(StockLevel stock) =>
-        stock.Location.Zone.IsShippable() ? 0 : stock.Quantity;
+    private static int InZone(StockLevel stock, Zone zone) =>
+        stock.Location.Zone == zone ? stock.Quantity : 0;
 }

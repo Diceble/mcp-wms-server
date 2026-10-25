@@ -1,4 +1,5 @@
 using Wms.Domain;
+using Wms.Domain.Queries;
 using static Wms.Infrastructure.Seeding.SeedScenarios;
 
 namespace Wms.Tests;
@@ -13,7 +14,7 @@ public class ProductStockTests(SeededDatabase database) : QueryTestBase(database
         Assert.NotNull(stock);
         Assert.Equal(["A-03-02", MismatchBin, "DMG-01", "RECV-01"], stock.Locations.Select(l => l.BinCode));
         Assert.Equal(38, stock.OnHand);
-        Assert.Equal(3, stock.Unshippable);
+        Assert.Equal((0, 3), (stock.InQualityControl, stock.Damaged));
 
         var damaged = Assert.Single(stock.Locations, l => l.Zone == Zone.Dmg);
         Assert.False(damaged.IsShippable);
@@ -39,7 +40,18 @@ public class ProductStockTests(SeededDatabase database) : QueryTestBase(database
         var mismatch = Assert.Single(stock.Locations, l => l.ReservationMismatch);
         Assert.Equal(MismatchBin, mismatch.BinCode);
         Assert.Equal(3, mismatch.Reserved);
-        Assert.Equal(2, mismatch.ReservedByOrders);
+        Assert.Equal([new LocationReservation(CassetteReservationOrder, 2, Database.Today.AddDays(12), 12)], mismatch.ReservedFor);
+    }
+
+    [Fact]
+    public async Task Reserved_stock_names_the_orders_holding_it_and_when_they_are_due()
+    {
+        var stock = await Queries.GetStockForProductAsync(BrakePadSku, Ct);
+
+        Assert.NotNull(stock);
+        var pick = Assert.Single(stock.Locations, l => l.BinCode == "A-01-03");
+        Assert.Equal([new LocationReservation(BrakePadReservationOrder, 4, Database.Today.AddDays(10), 10)], pick.ReservedFor);
+        Assert.All(stock.Locations.Where(l => l.BinCode != "A-01-03"), l => Assert.Empty(l.ReservedFor));
     }
 
     [Fact]

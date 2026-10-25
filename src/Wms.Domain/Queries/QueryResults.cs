@@ -11,9 +11,12 @@ public sealed record ProductStock(
     int OnHand,
     int Reserved,
     int Available,
-    int Unshippable,
+    int InQualityControl,
+    int Damaged,
     IReadOnlyList<LocationStock> Locations);
 
+/// <param name="ReservedFor">Which orders hold stock here, from the reservation rows.</param>
+/// <param name="ReservationMismatch">The stored <paramref name="Reserved"/> total differs from the sum of <paramref name="ReservedFor"/>.</param>
 public sealed record LocationStock(
     string BinCode,
     Zone Zone,
@@ -21,8 +24,15 @@ public sealed record LocationStock(
     int Quantity,
     int Reserved,
     int Available,
-    int ReservedByOrders,
+    IReadOnlyList<LocationReservation> ReservedFor,
     bool ReservationMismatch);
+
+/// <summary>
+/// Stock one order holds at a location. The promised date tells whether the reservation
+/// could be moved to a more urgent order.
+/// </summary>
+/// <param name="DaysUntilPromised">Negative when the promised date has passed.</param>
+public sealed record LocationReservation(int OrderNumber, int Quantity, DateOnly PromisedDate, int DaysUntilPromised);
 
 public sealed record LowStockProduct(
     string Sku,
@@ -31,16 +41,19 @@ public sealed record LowStockProduct(
     int Available,
     int OnHand,
     int Reserved,
-    int Unshippable)
+    int InQualityControl,
+    int Damaged)
 {
     public int Shortfall => ReorderLevel - Available;
 }
 
+/// <param name="DaysUntilPromised">Negative when the promised date has passed.</param>
 public sealed record OrderDetail(
     int OrderNumber,
     string Customer,
     OrderStatusInfo Status,
     DateOnly PromisedDate,
+    int DaysUntilPromised,
     IReadOnlyList<OrderLineDetail> Lines);
 
 public sealed record OrderLineDetail(

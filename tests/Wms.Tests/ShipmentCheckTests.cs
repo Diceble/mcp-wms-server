@@ -18,7 +18,7 @@ public class ShipmentCheckTests(SeededDatabase database) : QueryTestBase(databas
         Assert.Equal((12, 0, 10, 2), (shortLine.QuantityOpen, shortLine.ReservedForThisOrder, shortLine.FreeAvailable, shortLine.Shortfall));
         Assert.Equal(
             "Short 2: 12 open, 0 reserved for this order, 10 free in shippable zones. " +
-            "Not usable: 4 reserved for other orders, 4 in QC/DMG zones.",
+            "Not usable: 4 reserved for other orders, 4 in quality control, 0 damaged.",
             shortLine.Reason);
     }
 

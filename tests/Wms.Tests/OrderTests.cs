@@ -13,6 +13,7 @@ public class OrderTests(SeededDatabase database) : QueryTestBase(database)
         Assert.Equal("PSH", order.Status.Code);
         Assert.Equal("Partially shipped", order.Status.Meaning);
         Assert.Equal(Database.Today, order.PromisedDate);
+        Assert.Equal(0, order.DaysUntilPromised);
         Assert.Equal([ChainSku, TireSku, BrakePadSku], order.Lines.Select(l => l.Sku));
 
         var tire = order.Lines[1];
@@ -27,6 +28,7 @@ public class OrderTests(SeededDatabase database) : QueryTestBase(database)
         Assert.NotNull(order);
         Assert.Equal("PCK", order.Status.Code);
         Assert.True(order.Status.IsKnown);
+        Assert.Equal(-2, order.DaysUntilPromised);
     }
 
     [Fact]

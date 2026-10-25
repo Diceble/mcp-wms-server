@@ -15,9 +15,8 @@ builder.Logging.AddFilter("Microsoft.EntityFrameworkCore", LogLevel.Warning);
 using var database = WmsDatabase.FromEnvironment();
 builder.Services.AddWmsInventory(o => o.UseSqlite(database.ConnectionString));
 builder.Services
-    .AddMcpServer()
-    .WithStdioServerTransport()
-    .WithWmsTools();
+    .AddWmsMcpServer(TimeProvider.System.Today())
+    .WithStdioServerTransport();
 
 var app = builder.Build();
 app.Services.RecreateWmsDatabase();
