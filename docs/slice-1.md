@@ -111,9 +111,9 @@ tests/
 
 ## Planning (3–4 weken avonden)
 
-- [ ] Week 1: datamodel, seeddata en querylaag met een paar unit tests
-- [ ] Week 2: MCP-server met de 5 tools, gekoppeld aan Claude Desktop, vragen 1 en 2 werken
-- [ ] Week 3: vragen 3 en 4 werken; tool-beschrijvingen tunen (hier leer je het meest over hoe modellen tools kiezen en combineren)
+- [x] Week 1: datamodel, seeddata en querylaag met een paar unit tests
+- [x] Week 2: MCP-server met de 5 tools, gekoppeld aan Claude Desktop, vragen 1 en 2 werken
+- [x] Week 3: vragen 3 en 4 werken; tool-beschrijvingen tunen (hier leer je het meest over hoe modellen tools kiezen en combineren)
 - [ ] Week 4: README, demovideo van 2–3 minuten, op GitHub. Klaar.
 
 Past het niet in de tijd, schrap dan scope, geen kwaliteit.

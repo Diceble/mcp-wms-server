@@ -483,3 +483,6 @@ $RECYCLE.BIN/
 
 # Published MCP server for Claude Desktop
 artifacts/
+
+# Original scope document; docs/slice-1.md is the maintained version
+MCP WMS Server*Slice 1 Scope.pdf
